@@ -176,46 +176,52 @@ const DEFAULT_MONITORED_SITES = [
   // Update time spent on site
   function updateTimeSpent(site) {
     browser.storage.local.get(["sites"], data => {
-      const sites = data.sites;
-      const siteData = sites[site.domain];
-      const timeLimit = siteData.timeLimit;
-      
-      // Update time spent
-      siteData.timeSpent += 1000; // Add 1 second
-      siteData.lastUpdated = Date.now();
-      
-      // Check if time limit is reached
-      if (siteData.timeSpent >= timeLimit && !siteData.blocked) {
-        siteData.blocked = true;
-        
-        // Send block message to content script
-        browser.tabs.sendMessage(activeTabId, { 
-          action: "BLOCK_SITE",
-          site: site.name,
-          timeLimit: timeLimit / (60 * 1000) // Convert to minutes
+        const sites = data.sites;
+        const siteData = sites[site.domain];
+
+        if (!siteData) {
+            console.error(`No data found for domain: ${site.domain}`);
+            return;
+        }
+
+        const timeLimit = siteData.timeLimit;
+
+        // Update time spent only for the active domain
+        siteData.timeSpent += 1000; // Add 1 second
+        siteData.lastUpdated = Date.now();
+
+        // Check if time limit is reached
+        if (siteData.timeSpent >= timeLimit && !siteData.blocked) {
+            siteData.blocked = true;
+
+            // Send block message to content script
+            browser.tabs.sendMessage(activeTabId, { 
+                action: "BLOCK_SITE",
+                site: site.name,
+                timeLimit: timeLimit / (60 * 1000) // Convert to minutes
+            });
+
+            stopTracking();
+        }
+
+        // Update storage only for the active domain
+        browser.storage.local.set({ sites });
+
+        // Update badge with remaining time
+        const remainingTime = Math.max(0, Math.floor((timeLimit - siteData.timeSpent) / (60 * 1000)));
+        browser.browserAction.setBadgeText({
+            text: remainingTime.toString(),
+            tabId: activeTabId
         });
-        
-        stopTracking();
-      }
-      
-      // Update storage
-      browser.storage.local.set({ sites });
-      
-      // Update badge with remaining time
-      const remainingTime = Math.max(0, Math.floor((timeLimit - siteData.timeSpent) / (60 * 1000)));
-      browser.browserAction.setBadgeText({
-        text: remainingTime.toString(),
-        tabId: activeTabId
-      });
-      
-      // Red badge when time is almost up
-      if (remainingTime < 5) {
-        browser.browserAction.setBadgeBackgroundColor({ color: "#FF0000" });
-      } else {
-        browser.browserAction.setBadgeBackgroundColor({ color: "#4688F1" });
-      }
+
+        // Red badge when time is almost up
+        if (remainingTime < 5) {
+            browser.browserAction.setBadgeBackgroundColor({ color: "#FF0000" });
+        } else {
+            browser.browserAction.setBadgeBackgroundColor({ color: "#4688F1" });
+        }
     });
-  }
+}
   
   // Ignore a domain for 6 hours
   function ignoreDomain(domain) {
@@ -395,3 +401,37 @@ const DEFAULT_MONITORED_SITES = [
       });
     }
   });
+  
+  // Update badge text to reflect remaining time for the active domain
+  function updateBadgeForActiveTab() {
+    browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+        if (tabs.length === 0) return; // No active tab
+
+        const activeTab = tabs[0];
+        const url = new URL(activeTab.url);
+        const domain = url.hostname;
+
+        browser.storage.local.get("sites").then(data => {
+            const sites = data.sites || {};
+            const siteData = sites[domain];
+
+            if (siteData) {
+                const remainingMs = Math.max(0, siteData.timeLimit - siteData.timeSpent);
+                const remainingMinutes = Math.ceil(remainingMs / (60 * 1000));
+
+                browser.browserAction.setBadgeText({ text: remainingMinutes.toString() });
+                browser.browserAction.setBadgeBackgroundColor({ color: remainingMinutes > 0 ? "#4688F1" : "#FF0000" });
+            } else {
+                browser.browserAction.setBadgeText({ text: "" });
+            }
+        });
+    });
+}
+
+// Update badge only for the active tab
+browser.tabs.onActivated.addListener(updateBadgeForActiveTab);
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url) {
+        updateBadgeForActiveTab();
+    }
+});
