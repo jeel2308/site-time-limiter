@@ -1,12 +1,9 @@
-// Store sites to be monitored
-const MONITORED_SITES = [
-    { domain: "youtube.com", name: "YouTube" },
-    { domain: "netflix.com", name: "Netflix" },
-    { domain: "hotstar.com", name: "Hotstar" }
+// Default sites to be monitored
+const DEFAULT_MONITORED_SITES = [
+    { domain: "youtube.com", name: "YouTube", timeLimit: 60 * 60 * 1000 },
+    { domain: "hotstar.com", name: "Hotstar", timeLimit: 60 * 60 * 1000 },
+    { domain: "netflix.com", name: "Netflix", timeLimit: 60 * 60 * 1000 }
   ];
-  
-  // Default time limit: 30 minutes (in milliseconds)
-  const DEFAULT_TIME_LIMIT = 30 * 60 * 1000;
   
   // Initialize extension data
   browser.runtime.onInstalled.addListener(() => {
@@ -14,17 +11,19 @@ const MONITORED_SITES = [
     
     // Set default values
     const defaultData = {
-      timeLimit: DEFAULT_TIME_LIMIT,
-      sites: {}
+      sites: {},
+      ignoredUntil: {}
     };
     
     // Initialize tracking data for each site
-    MONITORED_SITES.forEach(site => {
+    DEFAULT_MONITORED_SITES.forEach(site => {
       defaultData.sites[site.domain] = {
         timeSpent: 0,
         lastUpdated: null,
         lastDate: today,
-        blocked: false
+        blocked: false,
+        timeLimit: site.timeLimit,
+        name: site.name
       };
     });
     
@@ -41,6 +40,10 @@ const MONITORED_SITES = [
   browser.alarms.onAlarm.addListener(alarm => {
     if (alarm.name === "resetDaily") {
       resetDailyCounts();
+    } else if (alarm.name.startsWith("ignoreExpire_")) {
+      // Handle expiration of ignore period
+      const domain = alarm.name.replace("ignoreExpire_", "");
+      expireIgnore(domain);
     }
   });
   
@@ -59,13 +62,11 @@ const MONITORED_SITES = [
     browser.storage.local.get(["sites"], (data) => {
       const sites = data.sites || {};
       
-      MONITORED_SITES.forEach(site => {
-        if (sites[site.domain]) {
-          sites[site.domain].timeSpent = 0;
-          sites[site.domain].lastDate = today;
-          sites[site.domain].blocked = false;
-        }
-      });
+      for (const domain in sites) {
+        sites[domain].timeSpent = 0;
+        sites[domain].lastDate = today;
+        sites[domain].blocked = false;
+      }
       
       browser.storage.local.set({ sites });
     });
@@ -95,11 +96,11 @@ const MONITORED_SITES = [
       stopTracking();
       
       activeTabUrl = tab.url;
-      const site = getSiteFromUrl(activeTabUrl);
-      
-      if (site) {
-        startTracking(site);
-      }
+      getSiteFromUrl(activeTabUrl).then(site => {
+        if (site) {
+          startTracking(site);
+        }
+      });
     }).catch(error => {
       console.error("Error getting tab info:", error);
     });
@@ -107,31 +108,44 @@ const MONITORED_SITES = [
   
   // Extract site info from URL
   function getSiteFromUrl(url) {
-    if (!url) return null;
+    if (!url) return Promise.resolve(null);
     
-    for (const site of MONITORED_SITES) {
-      if (url.includes(site.domain)) {
-        return site;
+    return browser.storage.local.get(["sites", "ignoredUntil"]).then(data => {
+      const sites = data.sites || {};
+      const ignoredUntil = data.ignoredUntil || {};
+      
+      for (const domain in sites) {
+        if (url.includes(domain)) {
+          // Check if this domain is currently being ignored
+          const now = Date.now();
+          if (ignoredUntil[domain] && ignoredUntil[domain] > now) {
+            return null; // Don't track this site while it's ignored
+          }
+          
+          return {
+            domain: domain,
+            name: sites[domain].name || domain
+          };
+        }
       }
-    }
-    
-    return null;
+      
+      return null;
+    });
   }
   
   // Start tracking time for a site
   function startTracking(site) {
     if (!site) return;
     
-    browser.storage.local.get(["sites", "timeLimit"], data => {
+    browser.storage.local.get(["sites"], data => {
       const siteData = data.sites[site.domain];
-      const timeLimit = data.timeLimit || DEFAULT_TIME_LIMIT;
       
       // Check if site is blocked
       if (siteData.blocked) {
         browser.tabs.sendMessage(activeTabId, { 
           action: "BLOCK_SITE",
           site: site.name,
-          timeLimit: timeLimit / (60 * 1000) // Convert to minutes
+          timeLimit: siteData.timeLimit / (60 * 1000) // Convert to minutes
         });
         return;
       }
@@ -161,10 +175,10 @@ const MONITORED_SITES = [
   
   // Update time spent on site
   function updateTimeSpent(site) {
-    browser.storage.local.get(["sites", "timeLimit"], data => {
+    browser.storage.local.get(["sites"], data => {
       const sites = data.sites;
-      const timeLimit = data.timeLimit || DEFAULT_TIME_LIMIT;
       const siteData = sites[site.domain];
+      const timeLimit = siteData.timeLimit;
       
       // Update time spent
       siteData.timeSpent += 1000; // Add 1 second
@@ -203,20 +217,166 @@ const MONITORED_SITES = [
     });
   }
   
+  // Ignore a domain for 6 hours
+  function ignoreDomain(domain) {
+    const now = Date.now();
+    const sixHoursMs = 6 * 60 * 60 * 1000;
+    const expireTime = now + sixHoursMs;
+    
+    browser.storage.local.get(["ignoredUntil", "sites"], data => {
+      const ignoredUntil = data.ignoredUntil || {};
+      const sites = data.sites || {};
+      
+      // Set ignore expiration time
+      ignoredUntil[domain] = expireTime;
+      
+      // If this site was blocked, unblock it
+      if (sites[domain] && sites[domain].blocked) {
+        sites[domain].blocked = false;
+      }
+      
+      // Update storage
+      browser.storage.local.set({ 
+        ignoredUntil: ignoredUntil,
+        sites: sites 
+      });
+      
+      // Create alarm to expire ignore
+      browser.alarms.create(`ignoreExpire_${domain}`, {
+        delayInMinutes: sixHoursMs / (60 * 1000) // Convert to minutes
+      });
+      
+      // Reload active tab if it contains this domain
+      browser.tabs.query({active: true, currentWindow: true}).then(tabs => {
+        if (tabs.length > 0 && tabs[0].url.includes(domain)) {
+          browser.tabs.reload(tabs[0].id);
+        }
+      });
+    });
+  }
+  
+  // Expire ignore period for a domain
+  function expireIgnore(domain) {
+    browser.storage.local.get("ignoredUntil", data => {
+      const ignoredUntil = data.ignoredUntil || {};
+      
+      if (ignoredUntil[domain]) {
+        delete ignoredUntil[domain];
+        browser.storage.local.set({ ignoredUntil: ignoredUntil });
+      }
+    });
+  }
+  
+  // Add a new domain to monitor
+  function addDomain(domain, name, timeLimit) {
+    // Clean up domain
+    domain = domain.toLowerCase().trim();
+    if (!domain.match(/^[a-z0-9.-]+\.[a-z]{2,}$/)) {
+      return Promise.reject("Invalid domain format");
+    }
+    
+    return browser.storage.local.get("sites").then(data => {
+      const sites = data.sites || {};
+      const today = new Date().toDateString();
+      
+      // Check if domain already exists
+      if (sites[domain]) {
+        return Promise.reject("Domain already exists");
+      }
+      
+      // Add new domain
+      sites[domain] = {
+        timeSpent: 0,
+        lastUpdated: null,
+        lastDate: today,
+        blocked: false,
+        timeLimit: timeLimit,
+        name: name || domain
+      };
+      
+      return browser.storage.local.set({ sites });
+    });
+  }
+  
+  // Remove a domain from monitoring
+  function removeDomain(domain) {
+    return browser.storage.local.get(["sites", "ignoredUntil"]).then(data => {
+      const sites = data.sites || {};
+      const ignoredUntil = data.ignoredUntil || {};
+      
+      // Remove domain if it exists
+      if (sites[domain]) {
+        delete sites[domain];
+      }
+      
+      // Remove from ignored list if it exists
+      if (ignoredUntil[domain]) {
+        delete ignoredUntil[domain];
+      }
+      
+      // Remove any related alarms
+      browser.alarms.clear(`ignoreExpire_${domain}`);
+      
+      return browser.storage.local.set({ 
+        sites: sites,
+        ignoredUntil: ignoredUntil
+      });
+    });
+  }
+  
+  // Update time limit for a domain
+  function updateDomainTimeLimit(domain, newTimeLimit) {
+    return browser.storage.local.get("sites").then(data => {
+      const sites = data.sites || {};
+      
+      // Update time limit if domain exists
+      if (sites[domain]) {
+        sites[domain].timeLimit = newTimeLimit;
+        return browser.storage.local.set({ sites });
+      } else {
+        return Promise.reject("Domain not found");
+      }
+    });
+  }
+  
   // Listen for messages from popup or content scripts
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "GET_TIME_DATA") {
-      browser.storage.local.get(["sites", "timeLimit"], data => {
+      browser.storage.local.get(["sites", "ignoredUntil"], data => {
         sendResponse({
-          sites: data.sites,
-          timeLimit: data.timeLimit || DEFAULT_TIME_LIMIT
+          sites: data.sites || {},
+          ignoredUntil: data.ignoredUntil || {}
         });
       });
       return true; // Required for async response
-    } else if (message.action === "UPDATE_TIME_LIMIT") {
-      browser.storage.local.set({ timeLimit: message.timeLimit });
-    } else if (message.action === "RESET_COUNTERS") {
+    } 
+    else if (message.action === "UPDATE_DOMAIN_TIME_LIMIT") {
+      updateDomainTimeLimit(message.domain, message.timeLimit)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error }));
+      return true;
+    } 
+    else if (message.action === "ADD_DOMAIN") {
+      addDomain(message.domain, message.name, message.timeLimit)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error }));
+      return true;
+    } 
+    else if (message.action === "REMOVE_DOMAIN") {
+      removeDomain(message.domain)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error }));
+      return true;
+    } 
+    else if (message.action === "IGNORE_DOMAIN") {
+      ignoreDomain(message.domain);
+      sendResponse({ success: true });
+      return false;
+    } 
+    else if (message.action === "RESET_COUNTERS") {
       resetDailyCounts();
+      sendResponse({ success: true });
+      return false;
     }
   });
   

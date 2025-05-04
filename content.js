@@ -16,7 +16,7 @@ function checkIfBlocked() {
     
     for (const domain in sites) {
       if (currentUrl.includes(domain) && sites[domain].blocked) {
-        blockSite(getDomainName(domain), response.timeLimit / (60 * 1000));
+        blockSite(sites[domain].name || getDomainName(domain), sites[domain].timeLimit / (60 * 1000));
         break;
       }
     }
@@ -62,7 +62,30 @@ function blockSite(siteName, timeLimitMinutes) {
                       <p>You've reached your daily limit of ${timeLimitMinutes} minutes for ${siteName}.</p>
                       <p>The site will be available again tomorrow.</p>`;
   
+  // Create ignore button
+  const ignoreButton = document.createElement("button");
+  ignoreButton.textContent = "Ignore limit for 6 hours";
+  ignoreButton.style.padding = "10px 20px";
+  ignoreButton.style.fontSize = "16px";
+  ignoreButton.style.backgroundColor = "#4688F1";
+  ignoreButton.style.color = "white";
+  ignoreButton.style.border = "none";
+  ignoreButton.style.borderRadius = "4px";
+  ignoreButton.style.cursor = "pointer";
+  ignoreButton.style.marginTop = "20px";
+  
+  ignoreButton.addEventListener("click", () => {
+    const domain = getDomainFromUrl(window.location.href);
+    if (domain) {
+      browser.runtime.sendMessage({ 
+        action: "IGNORE_DOMAIN", 
+        domain: domain 
+      });
+    }
+  });
+  
   overlay.appendChild(message);
+  overlay.appendChild(ignoreButton);
   
   // Clear existing content and add overlay
   document.body.innerHTML = "";
@@ -78,4 +101,21 @@ function blockSite(siteName, timeLimitMinutes) {
       }
     }
   }, true);
+}
+
+// Extract domain from URL
+function getDomainFromUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const parts = hostname.split('.');
+    
+    // Handle cases like www.youtube.com -> youtube.com
+    if (parts.length > 2 && parts[0] === 'www') {
+      return parts.slice(1).join('.');
+    }
+    
+    return parts.slice(-2).join('.');
+  } catch (e) {
+    return null;
+  }
 }

@@ -6,45 +6,21 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      width: 300px;
+      width: 350px;
       margin: 0;
       padding: 15px;
     }
     
-    h1 {
+    h1, h2 {
       font-size: 18px;
       margin-top: 0;
       margin-bottom: 15px;
       color: #333;
     }
     
-    .time-limit {
-      margin-bottom: 20px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
-    
-    input {
-      width: 80px;
-      padding: 5px;
-      margin-right: 10px;
-    }
-    
-    button {
-      background-color: #4688F1;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    
-    button:hover {
-      background-color: #3B78E7;
+    h2 {
+      font-size: 16px;
+      margin-top: 20px;
     }
     
     .site {
@@ -57,47 +33,174 @@
       border-bottom: none;
     }
     
+    .site-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    
     .site-name {
       font-weight: bold;
-      margin-bottom: 5px;
+    }
+    
+    .site-actions {
+      display: flex;
+      gap: 5px;
     }
     
     .time-info {
       display: flex;
       justify-content: space-between;
       color: #666;
+      margin-bottom: 8px;
+    }
+    
+    .time-limit-control {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    
+    .time-limit-control input {
+      width: 60px;
+      padding: 3px;
     }
     
     .blocked {
       color: #D32F2F;
       font-weight: bold;
+      margin-top: 5px;
     }
     
-    .actions {
+    .ignored {
+      color: #2E7D32;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+    
+    .actions, .add-domain {
       margin-top: 20px;
       display: flex;
-      justify-content: space-between;
+      gap: 10px;
+    }
+    
+    .add-domain {
+      flex-direction: column;
+    }
+    
+    .add-domain-row {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 5px;
+    }
+    
+    input {
+      padding: 5px;
+    }
+    
+    button {
+      background-color: #4688F1;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    button:hover {
+      background-color: #3B78E7;
+    }
+    
+    button.remove {
+      background-color: #D32F2F;
+    }
+    
+    button.remove:hover {
+      background-color: #C62828;
+    }
+    
+    button.ignore {
+      background-color: #2E7D32;
+    }
+    
+    button.ignore:hover {
+      background-color: #1B5E20;
+    }
+    
+    .no-sites {
+      color: #666;
+      font-style: italic;
+    }
+    
+    .tabs {
+      display: flex;
+      margin-bottom: 15px;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .tab {
+      padding: 8px 15px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    
+    .tab.active {
+      border-bottom: 2px solid #4688F1;
+      font-weight: bold;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
     }
   </style>
 </head>
 <body>
   <h1>Site Time Limiter</h1>
   
-  <div class="time-limit">
-    <label for="time-limit">Daily Time Limit (minutes):</label>
-    <div>
-      <input type="number" id="time-limit" min="1" max="1440">
-      <button id="save-limit">Save</button>
+  <div class="tabs">
+    <div class="tab active" data-tab="sites">Monitored Sites</div>
+    <div class="tab" data-tab="add">Add Site</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+  
+  <div class="tab-content active" id="sites-tab">
+    <div id="sites-container">
+      <!-- Site data will be inserted here -->
+      <div class="loading">Loading...</div>
+    </div>
+    
+    <div class="actions">
+      <button id="refresh">Refresh</button>
+      <button id="reset">Reset All Counters</button>
     </div>
   </div>
   
-  <div id="sites-container">
-    <!-- Site data will be inserted here -->
-    <div class="loading">Loading...</div>
+  <div class="tab-content" id="add-tab">
+    <div class="add-domain">
+      <div class="add-domain-row">
+        <input type="text" id="new-domain" placeholder="Domain (e.g., example.com)" style="flex-grow: 1;">
+      </div>
+      <div class="add-domain-row">
+        <input type="text" id="new-name" placeholder="Display Name (optional)" style="flex-grow: 1;">
+      </div>
+      <div class="add-domain-row">
+        <input type="number" id="new-time-limit" placeholder="Minutes" min="1" max="1440" style="width: 100px;">
+        <span style="line-height: 30px;">minutes</span>
+      </div>
+      <button id="add-domain">Add Domain</button>
+    </div>
   </div>
   
-  <div class="actions">
-    <button id="reset">Reset All Counters</button>
+  <div class="tab-content" id="settings-tab">
+    <h2>Settings</h2>
+    <p>The extension will reset all counters automatically at midnight.</p>
+    <button id="reset-from-settings">Reset All Counters Now</button>
   </div>
   
   <script src="popup.js"></script>
