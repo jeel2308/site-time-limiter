@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Site Time Limiter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 300px;
+      margin: 0;
+      padding: 15px;
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    
+    .time-limit {
+      margin-bottom: 20px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    
+    input {
+      width: 80px;
+      padding: 5px;
+      margin-right: 10px;
+    }
+    
+    button {
+      background-color: #4688F1;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    button:hover {
+      background-color: #3B78E7;
+    }
+    
+    .site {
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .site:last-child {
+      border-bottom: none;
+    }
+    
+    .site-name {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .time-info {
+      display: flex;
+      justify-content: space-between;
+      color: #666;
+    }
+    
+    .blocked {
+      color: #D32F2F;
+      font-weight: bold;
+    }
+    
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <h1>Site Time Limiter</h1>
+  
+  <div class="time-limit">
+    <label for="time-limit">Daily Time Limit (minutes):</label>
+    <div>
+      <input type="number" id="time-limit" min="1" max="1440">
+      <button id="save-limit">Save</button>
+    </div>
+  </div>
+  
+  <div id="sites-container">
+    <!-- Site data will be inserted here -->
+    <div class="loading">Loading...</div>
+  </div>
+  
+  <div class="actions">
+    <button id="reset">Reset All Counters</button>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
